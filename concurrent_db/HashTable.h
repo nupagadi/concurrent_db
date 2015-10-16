@@ -1,5 +1,6 @@
 #pragma once
 
+#define HASH_TABLE_START_SIZE 1048576
 #define HASH_TABLE_START_SIZE 64
 
 #include <deque>
@@ -16,14 +17,16 @@ public:
 
 	HashTable() : mMap(HASH_TABLE_START_SIZE) {}
 
-	// operator[]
 	mapped_t& Set(const key_t& key, const mapped_t& value);
 	mapped_t& Get(const key_t& key);
+
+	mapped_t& operator[](const key_t& key);
 
 private:
 	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
 
-
 	std::deque<std::list<elem_t>> mMap;
+
+
 
 };
