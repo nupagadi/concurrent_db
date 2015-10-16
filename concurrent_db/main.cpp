@@ -10,8 +10,18 @@ using namespace std;
 
 int main()
 {
+	auto p = make_pair(string("sdlfkj"), string("sdlffgbdfbdfkj"));
+	list<pair<string, string>> l;
+	cout << sizeof(p) << endl;
+	cout << sizeof(l) << endl;
+
+	std::deque<std::list<HashTable::elem_t>> mMap(64);
+
+
 	HashTable h_table;
-	h_table.Set("121", "121");
+	cout << sizeof(mMap) << endl;
+	cout << (mMap.size()) << endl;
+	h_table["121"] = "121";
 	h_table.Set("122", "122");
 	h_table.Set("123", "123");
 	h_table.Set("124", "124");
@@ -56,6 +66,6 @@ int main()
 	cout << h_table.Get("123") << endl;
 	cout << h_table.Get("1230") << endl;
 	cout << h_table.Get("1") << endl;
-	cout << h_table.Get("121") << endl;
+	cout << h_table["121"] << endl;
 	cout << h_table.Get("1230") << endl;
 }
