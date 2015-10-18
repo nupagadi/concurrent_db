@@ -1,7 +1,7 @@
 #pragma once
 
 #define HASH_TABLE_START_SIZE 1048576
-//#define HASH_TABLE_START_SIZE 64
+#define HASH_TABLE_START_SIZE 64
 
 #include <deque>
 #include <string>
@@ -16,7 +16,7 @@ class DB_MUTEX
 	std::deque<std::mutex> MUTEXES;
 
 public:
-	DB_MUTEX() : HC(std::thread::hardware_concurrency()), MUTEXES(HC) {}
+	DB_MUTEX(const size_t threads_num) : HC(threads_num), MUTEXES(HC) {}
 
 	std::mutex& get(size_t hash){ return MUTEXES[hash%HC]; }
 };
@@ -28,25 +28,24 @@ class HashTable
 public:
 	typedef std::pair<key_t, mapped_t> elem_t;
 
-	HashTable() : mMap(HASH_TABLE_START_SIZE) {}
+	HashTable(const size_t threads_num, const size_t table_size = HASH_TABLE_START_SIZE) : mMutex(threads_num), mMap(table_size) {}
 
 	mapped_t& operator[](const key_t& key);
 	mapped_t& operator[](key_t&& key);
 
 private:
-
-	static DB_MUTEX MUTEX;
-
-	std::mutex& get_mutex(const key_t& key) { return MUTEX.get(123); }
+	std::mutex& get_mutex(const key_t& key) { return mMutex.get(std::hash<key_t>()(key)); }
 
 	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
 
 	std::deque<std::list<elem_t>> mMap;
 
+	DB_MUTEX mMutex;
+
 };
 
-template<class key_t, class mapped_t>
-DB_MUTEX HashTable<key_t, mapped_t>::MUTEX;
+//template<class key_t, class mapped_t>
+//DB_MUTEX HashTable<key_t, mapped_t>::MUTEX;
 
 
 template<class key_t, class mapped_t>
