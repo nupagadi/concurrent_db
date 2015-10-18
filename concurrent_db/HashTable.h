@@ -15,6 +15,8 @@ class DB_MUTEX
 	const size_t HC;
 	std::deque<std::mutex> MUTEXES;
 
+	// ADD LIST MUTEX
+
 public:
 	DB_MUTEX(const size_t threads_num) : HC(threads_num), MUTEXES(HC) {}
 
@@ -32,6 +34,57 @@ public:
 
 	mapped_t& operator[](const key_t& key);
 	mapped_t& operator[](key_t&& key);
+
+	//REMOVE
+
+	template<class key_t, class mapped_t>
+	class Iterator : public std::iterator<std::bidirectional_iterator_tag, mapped_t>
+	{
+	public:
+		typedef typename std::list<elem_t>::iterator list_iterator_t;
+		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
+
+		Iterator(deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
+			: mDequeIterator(deque_iterator), mDequeEnd(deque_end), mListIterator(list_iterator), mListEnd(list_end)
+			{}
+
+		// off-the-end HashTable::Iterator should not be incremented
+		Iterator& operator++() {
+			// BLOCK LIST MUTEX
+			++mListIterator;
+			if (mListIterator == mListEnd)
+			{
+				++mDequeIterator;
+				mListIterator = mDequeIterator->begin();
+				mListEnd = mDequeIterator->end();
+			}
+			return *this;
+		}
+		// begin HashTable::Iterator should not be decremented
+		Iterator& operator--() {
+			--mListIterator;
+			if (mListIterator == mListEnd)
+			{
+				++mDequeIterator;
+				mListIterator = mDequeIterator->begin();
+				mListEnd = mDequeIterator->end();
+			}
+			return *this;
+		}
+
+	private:
+		deque_iterator_t mDequeIterator;
+		deque_iterator_t mDequeEnd;
+		list_iterator_t mListIterator;
+		list_iterator_t mListEnd;
+	};
+
+	Iterator<key_t, mapped_t> Begin()	{
+		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.end()->end());
+	}
+	Iterator<key_t, mapped_t> End()	{
+		return Iterator<key_t, mapped_t>(mMap.size(), mMap[0].end());
+	}
 
 private:
 	std::mutex& get_mutex(const key_t& key) { return mMutex.get(std::hash<key_t>()(key)); }
@@ -57,6 +110,7 @@ mapped_t& HashTable<key_t, mapped_t>::operator[](const key_t& key)
 	if (it != b_list.end())
 		return it->second;
 	else
+		// BLOCK LIST MUTEX
 		return b_list.insert(it, { key, mapped_t() })->second;
 }
 
