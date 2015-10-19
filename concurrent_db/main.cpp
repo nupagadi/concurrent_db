@@ -14,9 +14,13 @@ int main()
 
 	h_table[string("121")] = string("121");
 
+	string str = "122";
+	h_table[str] = str;
+
 	cout << h_table["121"] << endl;
 
 	auto iter = h_table.Begin();
+	auto iter2 = h_table.End();
 	++iter;
 	--iter;
 
