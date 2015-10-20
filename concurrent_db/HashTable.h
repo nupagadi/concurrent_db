@@ -14,14 +14,14 @@
 class DB_MUTEX
 {
 	const size_t mThreadsNum;
-	std::deque<std::mutex> mElemMX;
-	std::deque<std::mutex> mListMX;
+	std::deque<std::mutex> mElemRW;
+	std::deque<std::mutex> mListAlt;
 
 public:
-	DB_MUTEX(const size_t threads_num) : mThreadsNum(threads_num), mElemMX(mThreadsNum), mListMX(mThreadsNum) {}
+	DB_MUTEX(const size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum), mListAlt(mThreadsNum) {}
 
-	std::mutex& GetElemMX(size_t hash){ return mElemMX[hash%mThreadsNum]; }
-	std::mutex& GetListMX(size_t index){ return mListMX[index%mThreadsNum]; }
+	std::mutex& GetElemRW(size_t hash){ return mElemRW[hash%mThreadsNum]; }
+	std::mutex& GetListAlt(size_t index){ return mListAlt[index%mThreadsNum]; }
 };
 
 
@@ -47,7 +47,7 @@ public:
 
 		Iterator(deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
 			: mDequeIterator(deque_iterator), mDequeEnd(deque_end), mListIterator(list_iterator), mListEnd(list_end)
-			{}
+		{	do_increment(); }
 
 		// off-the-end HashTable::Iterator should not be incremented
 		Iterator& operator++() {
@@ -75,8 +75,9 @@ public:
 		void do_increment()
 		{
 			// BLOCK LIST MUTEX
-			++mListIterator;
-			if (mListIterator == mListEnd)
+			if (mListIterator != mListEnd)
+				++mListIterator;
+			while(mListIterator == mListEnd)
 			{
 				++mDequeIterator;
 				mListIterator = mDequeIterator->begin();
@@ -91,19 +92,19 @@ public:
 	};
 
 	Iterator<key_t, mapped_t> Begin()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.end()->end());
+		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
 	}
 	Iterator<key_t, mapped_t> End()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.end()->end());
+		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
 	}
+	std::deque<std::list<elem_t>> mMap;
 
 private:
-	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemMX(std::hash<key_t>()(key)); }
-	std::mutex& get_list_mx(const key_t& key) { return mMutex.GetListMX(std::hash<key_t>()(key)); }
+	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
+	std::mutex& get_list_mx(const key_t& key) { return mMutex.GetListAlt(std::hash<key_t>()(key)); }
 
 	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
 
-	std::deque<std::list<elem_t>> mMap;
 
 	DB_MUTEX mMutex;
 

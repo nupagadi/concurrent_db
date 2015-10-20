@@ -7,7 +7,6 @@ using namespace std;
 int main()
 {
 
-
 	auto threads_num = thread::hardware_concurrency();
 
 	HashTable<string, string> h_table(threads_num);
@@ -19,10 +18,13 @@ int main()
 
 	cout << h_table["121"] << endl;
 
+
 	auto iter = h_table.Begin();
 	auto iter2 = h_table.End();
 	++iter;
-	--iter;
+	++iter;
+	++iter;
+	//--iter;
 
 	HashTable<int, string> htint(threads_num);
 	htint[0] = "0";
