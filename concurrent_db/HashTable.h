@@ -45,8 +45,9 @@ public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
 		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
 
-		Iterator(deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
-			: mDequeIterator(deque_iterator), mDequeEnd(deque_end), mListIterator(list_iterator), mListEnd(list_end)
+		Iterator(deque_iterator_t deque_begin, deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
+			: mDequeBegin(deque_begin), mDequeIterator(deque_iterator), mDequeEnd(deque_end), 
+			  mListIterator(list_iterator), mListEnd(list_end)
 		{	do_increment(); }
 
 		// off-the-end HashTable::Iterator should not be incremented
@@ -77,25 +78,35 @@ public:
 			// BLOCK LIST MUTEX
 			if (mListIterator != mListEnd)
 				++mListIterator;
-			while(mListIterator == mListEnd)
+			else
 			{
-				++mDequeIterator;
+				do	{
+					size_t id = mDequeIterator - mDequeBegin;
+					++mDequeIterator;
+					get_elem_mx(id + 1).lock();
+					get_elem_mx(id).unlock();
+				} while (mDequeIterator != mDequeEnd && mDequeIterator->empty());
+
 				mListIterator = mDequeIterator->begin();
 				mListEnd = mDequeIterator->end();
 			}
+
 		}
 
+		std::mutex& get_elem_mx(const size_t id) { return mMutex.GetElemRW(id); }
+
 		deque_iterator_t mDequeIterator;
+		deque_iterator_t mDequeBegin;
 		deque_iterator_t mDequeEnd;
 		list_iterator_t mListIterator;
 		list_iterator_t mListEnd;
 	};
 
 	Iterator<key_t, mapped_t> Begin()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
+		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
 	}
 	Iterator<key_t, mapped_t> End()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
+		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
 	}
 	std::deque<std::list<elem_t>> mMap;
 
@@ -118,8 +129,7 @@ private:
 template<class key_t, class mapped_t>
 mapped_t& HashTable<key_t, mapped_t>::operator[](const key_t& key)
 {
-	auto list_lock = std::lock_guard<std::mutex>(get_list_mx(key));
-	auto elem_lock = std::lock_guard<std::mutex>(get_elem_mx(key));
+	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
 	auto& b_list = bucket(key);
 	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 	if (it != b_list.end())
@@ -135,7 +145,6 @@ mapped_t& HashTable<key_t, mapped_t>::operator[](const key_t& key)
 template<class key_t, class mapped_t>
 mapped_t& HashTable<key_t, mapped_t>::operator[](key_t&& key)
 {
-	auto list_lock = std::lock_guard<std::mutex>(get_list_mx(key));
 	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
 	auto& b_list = bucket(key);
 	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
