@@ -45,10 +45,13 @@ public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
 		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
 
-		Iterator(deque_iterator_t deque_begin, deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
-			: mDequeBegin(deque_begin), mDequeIterator(deque_iterator), mDequeEnd(deque_end), 
-			  mListIterator(list_iterator), mListEnd(list_end)
-		{	do_increment(); }
+		//Iterator(deque_iterator_t deque_begin, deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
+		//	: mDequeBegin(deque_begin), mDequeIterator(deque_iterator), mDequeEnd(deque_end), 
+		//	  mListIterator(list_iterator), mListEnd(list_end)
+		//{	do_increment(); }
+
+		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
+		{}
 
 		// off-the-end HashTable::Iterator should not be incremented
 		Iterator& operator++() {
@@ -62,53 +65,91 @@ public:
 
 		// begin HashTable::Iterator should not be decremented
 		Iterator& operator--() {
-			--mListIterator;
-			if (mListIterator == mListEnd)
-			{
-				++mDequeIterator;
-				mListIterator = mDequeIterator->begin();
-				mListEnd = mDequeIterator->end();
-			}
+			do_decrement();
 			return *this;
 		}
 
 	private:
 		void do_increment()
 		{
-			// BLOCK LIST MUTEX
-			if (mListIterator != mListEnd)
+
+			// CONSIDER GUARDS!!!!!!!!!!
+			// CONSIDER GUARDS!!!!!!!!!!
+			// CONSIDER GUARDS!!!!!!!!!!
+
+			mMutex.GetElemRW(mIndex).lock();
+			auto list_end = mMap[mIndex].end();
+
+			if (mListIterator != list_end)
 				++mListIterator;
-			else
+
+			if (mListIterator == list_end)
 			{
-				do	{
-					size_t id = mDequeIterator - mDequeBegin;
-					++mDequeIterator;
-					get_elem_mx(id + 1).lock();
-					get_elem_mx(id).unlock();
-				} while (mDequeIterator != mDequeEnd && mDequeIterator->empty());
+				// what if mIndex == mMap.size() - 1
+				while (mIndex < mMap.size() && mMap[mIndex].empty())
+				{
+					// order matters due to deadlock possibility
+					mMutex.GetElemRW(mIndex).unlock();
+					mMutex.GetElemRW(++mIndex).lock();
+				}
 
-				mListIterator = mDequeIterator->begin();
-				mListEnd = mDequeIterator->end();
+				if(mIndex < mMap.size())
+					mListIterator = mMap[mIndex].begin();
+
 			}
-
+			// unlock last index mutex, mb original one
+			mMutex.GetElemRW(mIndex).unlock();
 		}
 
-		std::mutex& get_elem_mx(const size_t id) { return mMutex.GetElemRW(id); }
+		void do_decrement()
+		{
 
-		deque_iterator_t mDequeIterator;
-		deque_iterator_t mDequeBegin;
-		deque_iterator_t mDequeEnd;
+			// CONSIDER GUARDS!!!!!!!!!!
+			// CONSIDER GUARDS!!!!!!!!!!
+			// CONSIDER GUARDS!!!!!!!!!!
+
+			mMutex.GetElemRW(mIndex).lock();
+			auto list_begin = mMap[mIndex].begin();
+
+			if (mListIterator != list_begin)
+				--mListIterator;
+
+			//if (mListIterator == list_end)
+			else
+			{
+				while (mIndex > 0 && mMap[mIndex].empty())	
+				{
+					// order matters due to deadlock possibility
+					mMutex.GetElemRW(mIndex).unlock();
+					mMutex.GetElemRW(--mIndex).lock();
+				}
+
+				if (mIndex >= 0 && !mMap[mIndex].empty())
+				{
+					mListIterator = mMap[mIndex].end();
+					--mListIterator;
+				}
+
+			}
+			// unlock last index mutex, mb original one
+			mMutex.GetElemRW(mIndex).unlock();
+		}
+
+
+		size_t mIndex = 0;
+		std::deque<std::list<elem_t>>& mMap;
+
 		list_iterator_t mListIterator;
-		list_iterator_t mListEnd;
+
+		DB_MUTEX& mMutex;
 	};
 
 	Iterator<key_t, mapped_t> Begin()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
+		return Iterator<key_t, mapped_t>(mMap, 0, mMap[0].begin(), mMutex);
 	}
 	Iterator<key_t, mapped_t> End()	{
-		return Iterator<key_t, mapped_t>(mMap.begin(), mMap.begin(), mMap.end(), mMap.begin()->begin(), mMap.begin()->end());
+		return Iterator<key_t, mapped_t>(mMap, mMap.size(), mMap[mMap.size()-1].end(), mMutex);
 	}
-	std::deque<std::list<elem_t>> mMap;
 
 private:
 	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
@@ -116,10 +157,10 @@ private:
 
 	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
 
-
 	DB_MUTEX mMutex;
 
 	std::atomic<size_t> mSize;
+	std::deque<std::list<elem_t>> mMap;
 };
 
 //template<class key_t, class mapped_t>
