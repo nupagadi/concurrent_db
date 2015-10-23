@@ -54,19 +54,25 @@ public:
 		{}
 
 		// off-the-end HashTable::Iterator should not be incremented
-		Iterator& operator++() {
+		Iterator operator++() {
 			do_increment();
 			return *this;
 		}
-		Iterator& operator++(int) {
+		Iterator operator++(int) {
+			auto prev = *this;
 			do_increment();
-			return *this;
+			return prev;
 		}
 
 		// begin HashTable::Iterator should not be decremented
-		Iterator& operator--() {
+		Iterator operator--() {
 			do_decrement();
 			return *this;
+		}
+		Iterator operator--(int) {
+			auto next = *this;
+			do_decrement();
+			return next;
 		}
 
 	private:
@@ -83,15 +89,14 @@ public:
 			if (mListIterator != list_end)
 				++mListIterator;
 
-			if (mListIterator == list_end)
+			if (mListIterator == list_end && mIndex < mMap.size())
 			{
 				// what if mIndex == mMap.size() - 1
-				while (mIndex < mMap.size() && mMap[mIndex].empty())
-				{
+				do	{
 					// order matters due to deadlock possibility
 					mMutex.GetElemRW(mIndex).unlock();
 					mMutex.GetElemRW(++mIndex).lock();
-				}
+				}	while (mIndex < mMap.size() && mMap[mIndex].empty());
 
 				if(mIndex < mMap.size())
 					mListIterator = mMap[mIndex].begin();

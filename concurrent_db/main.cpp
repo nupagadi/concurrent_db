@@ -24,6 +24,9 @@ int main()
 	++iter;
 	++iter;
 	++iter;
+	--iter;
+	--iter;
+	--iter;
 	//--iter;
 
 	HashTable<int, string> htint(threads_num);
