@@ -39,8 +39,8 @@ public:
 	//REMOVE
 
 	// don't share iterators among several threads
-	template<class key_t, class mapped_t>
-	class Iterator : public std::iterator<std::bidirectional_iterator_tag, mapped_t>
+	template<class elem_t>
+	class Iterator : public std::iterator<std::bidirectional_iterator_tag, elem_t>
 	{
 	public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
@@ -52,7 +52,12 @@ public:
 		//{	do_increment(); }
 
 		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
-		{}
+		{
+			mMutex.GetElemRW(mIndex).lock();
+			bool is_empty = mIndex != mMap.size() && mMap[mIndex].empty();
+			mMutex.GetElemRW(mIndex).unlock();
+			if (is_empty)	do_increment();
+		}
 
 		// off-the-end HashTable::Iterator should not be incremented
 		Iterator operator++() {
@@ -75,6 +80,15 @@ public:
 			do_decrement();
 			return next;
 		}
+
+		bool operator==(const Iterator& rh) {
+			if (mIndex == this->mMap.size())
+				return mIndex == rh.mIndex;
+			return mIndex == rh.mIndex && mListIterator == rh.mListIterator;				
+		}
+		bool operator!=(const Iterator& rh) { return !operator==(rh); }
+
+		elem_t& operator*(){ return *mListIterator; }
 
 	private:
 		void do_increment()
@@ -162,11 +176,11 @@ public:
 		DB_MUTEX& mMutex;
 	};
 
-	Iterator<key_t, mapped_t> Begin()	{
-		return Iterator<key_t, mapped_t>(mMap, 0, mMap[0].begin(), mMutex);
+	Iterator<elem_t> Begin()	{
+		return Iterator<elem_t>(mMap, 0, mMap[0].begin(), mMutex);
 	}
-	Iterator<key_t, mapped_t> End()	{
-		return Iterator<key_t, mapped_t>(mMap, mMap.size(), mMap[mMap.size()-1].end(), mMutex);
+	Iterator<elem_t> End()	{
+		return Iterator<elem_t>(mMap, mMap.size(), mMap[mMap.size() - 1].end(), mMutex);
 	}
 
 private:

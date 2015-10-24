@@ -24,13 +24,47 @@ int main()
 
 	auto iter = h_table.Begin();
 	auto iter2 = h_table.End();
+	*iter = make_pair(string("qwe"), string("qwe"));
+	cout << (*iter).first << endl
+		<< (*iter).second << endl;
+	cout << boolalpha;
+	cout<< (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	++iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	++iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	++iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	--iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	--iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
 	--iter;
-	//--iter;
+	cout << (*iter).first
+		<< (*iter).second
+		<< (iter == iter2) << endl
+		<< (iter != iter2) << endl;
+
+
+
 
 	HashTable<int, string> htint(threads_num);
 	htint[0] = "0";
