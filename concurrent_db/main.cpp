@@ -16,6 +16,9 @@ int main()
 	string str = "122";
 	h_table[str] = str;
 
+	h_table["12"] = "12";
+	h_table["11"] = "11";
+
 	cout << h_table["121"] << endl;
 
 

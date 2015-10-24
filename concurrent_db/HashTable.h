@@ -38,6 +38,7 @@ public:
 
 	//REMOVE
 
+	// don't share iterators among several threads
 	template<class key_t, class mapped_t>
 	class Iterator : public std::iterator<std::bidirectional_iterator_tag, mapped_t>
 	{
@@ -82,6 +83,7 @@ public:
 			// CONSIDER GUARDS!!!!!!!!!!
 			// CONSIDER GUARDS!!!!!!!!!!
 			// CONSIDER GUARDS!!!!!!!!!!
+			// in case of incrementing end or decrementing begin
 
 			mMutex.GetElemRW(mIndex).lock();
 			auto list_end = mMap[mIndex].end();
@@ -89,17 +91,18 @@ public:
 			if (mListIterator != list_end)
 				++mListIterator;
 
-			if (mListIterator == list_end && mIndex < mMap.size())
+			if (mListIterator == list_end)
 			{
-				// what if mIndex == mMap.size() - 1
 				do	{
 					// order matters due to deadlock possibility
 					mMutex.GetElemRW(mIndex).unlock();
-					mMutex.GetElemRW(++mIndex).lock();
-				}	while (mIndex < mMap.size() && mMap[mIndex].empty());
 
-				if(mIndex < mMap.size())
-					mListIterator = mMap[mIndex].begin();
+					if (++mIndex == mMap.size())	return;
+
+					mMutex.GetElemRW(mIndex).lock();
+				}	while (mMap[mIndex].empty());
+				
+				mListIterator = mMap[mIndex].begin();
 
 			}
 			// unlock last index mutex, mb original one
@@ -114,31 +117,41 @@ public:
 			// CONSIDER GUARDS!!!!!!!!!!
 
 			mMutex.GetElemRW(mIndex).lock();
-			auto list_begin = mMap[mIndex].begin();
 
-			if (mListIterator != list_begin)
-				--mListIterator;
+			if (mIndex == mMap.size())
+				seek_prev();
 
-			//if (mListIterator == list_end)
+			//if (mIndex != mMap.size())
 			else
 			{
-				while (mIndex > 0 && mMap[mIndex].empty())	
-				{
-					// order matters due to deadlock possibility
-					mMutex.GetElemRW(mIndex).unlock();
-					mMutex.GetElemRW(--mIndex).lock();
-				}
-
-				if (mIndex >= 0 && !mMap[mIndex].empty())
-				{
-					mListIterator = mMap[mIndex].end();
+				auto list_begin = mMap[mIndex].begin();
+				// assume mListIterator is valid
+				if (mListIterator != list_begin)
 					--mListIterator;
-				}
-
+				else	seek_prev();
 			}
 			// unlock last index mutex, mb original one
 			mMutex.GetElemRW(mIndex).unlock();
 		}
+
+		// seek for the very previous valid iterator
+		// unlocks input, locks output
+		void seek_prev()
+		{
+			
+			do {
+				// order matters due to deadlock possibility
+				mMutex.GetElemRW(mIndex).unlock();
+				mMutex.GetElemRW(--mIndex).lock();
+			} while (mIndex > 0 && mMap[mIndex].empty());
+
+			if (mIndex >= 0 && !mMap[mIndex].empty())
+			{
+				mListIterator = mMap[mIndex].end();
+				--mListIterator;
+			}
+		}
+
 
 
 		size_t mIndex = 0;
