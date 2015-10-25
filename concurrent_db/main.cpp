@@ -14,7 +14,7 @@ int main()
 	h_table[string("121")] = string("121");
 
 	string str = "122";
-	h_table[str] = str;
+	h_table[std::forward<string>(str)] = str;
 
 	h_table["12"] = "12";
 	h_table["11"] = "11";

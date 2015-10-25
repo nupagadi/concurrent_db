@@ -15,13 +15,11 @@ class DB_MUTEX
 {
 	const size_t mThreadsNum;
 	std::deque<std::mutex> mElemRW;
-	std::deque<std::mutex> mListAlt;
 
 public:
-	DB_MUTEX(const size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum), mListAlt(mThreadsNum) {}
+	DB_MUTEX(const size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum) {}
 
 	std::mutex& GetElemRW(size_t hash){ return mElemRW[hash%mThreadsNum]; }
-	std::mutex& GetListAlt(size_t index){ return mListAlt[index%mThreadsNum]; }
 };
 
 
@@ -37,34 +35,41 @@ public:
 
 	HashTable(const size_t threads_num, const size_t table_size = HASH_TABLE_START_SIZE) : mMutex(threads_num), mMap(table_size) {}
 
-	Entry<mapped_t> operator[](const key_t& key);
-	Entry<mapped_t> operator[](key_t&& key);
+	//Entry<elem_t> operator[](const key_t& key);
+	Entry<elem_t> operator[](key_t&& key);
 
-	template<class mapped_t>
+	template<class elem_t>
 	class Entry
 	{
 	public:
-		Entry(mapped_t& value) : mEntry(value)
+		Entry(elem_t& entry, DB_MUTEX& mutex) : mEntry(entry), mMutex(mutex)
 		{}
 		Entry& operator=(const mapped_t& rh)
 		{
+			auto lock_guard = std::lock_guard<std::mutex>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			mEntry.second = rh;
 			return *this;
 		}
 		Entry& operator=(mapped_t&& rh)
 		{
+			auto lock_guard = std::lock_guard<std::mutex>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			mEntry.second = std::move(rh);
 			return *this;
 		}
 
-		operator mapped_t() { return mEntry; }
+		operator mapped_t() { 
+			auto lock_guard = std::lock_guard<std::mutex>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			return mEntry.second; 
+		}
 
 	private:
-		mapped_t& mEntry;
+		elem_t& mEntry;
+		DB_MUTEX& mMutex;
 	};
 
 	//REMOVE
 private:
 	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
-	std::mutex& get_list_mx(const key_t& key) { return mMutex.GetListAlt(std::hash<key_t>()(key)); }
 
 	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
 
@@ -217,34 +222,33 @@ public:
 };
 
 
-template<class key_t, class mapped_t>
-auto HashTable<key_t, mapped_t>::operator[](const key_t& key) -> Entry<mapped_t>
-{
-	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
-	auto& b_list = bucket(key);
-	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
-	if (it != b_list.end())
-		return it->second;
-	else
-	{
-		// BLOCK LIST MUTEX
-		mSize.fetch_add(1);
-		return b_list.insert(it, { key, mapped_t() })->second;
-	}
-}
+//template<class key_t, class mapped_t>
+//auto HashTable<key_t, mapped_t>::operator[](const key_t& key) -> Entry<elem_t>
+//{
+//	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
+//	auto& b_list = bucket(key);
+//	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
+//	if (it != b_list.end())
+//		return it->second;
+//	else
+//	{
+//		mSize.fetch_add(1);
+//		return b_list.insert(it, { key, mapped_t() })->second;
+//	}
+//}
 
 template<class key_t, class mapped_t>
-auto HashTable<key_t, mapped_t>::operator[](key_t&& key) -> Entry<mapped_t>
+auto HashTable<key_t, mapped_t>::operator[](key_t&& key) -> Entry<elem_t>
 {
 	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
 	auto& b_list = bucket(key);
 	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 	if (it != b_list.end())
-		return it->second;
+		return Entry<elem_t>(*it, mMutex);
 	else
 	{
 		mSize.fetch_add(1);
-		return b_list.insert(it, { std::forward<key_t>(key), mapped_t() })->second;
+		return Entry<elem_t>(*b_list.insert(it, { std::forward<key_t>(key), mapped_t() }), mMutex);
 	}
 }
 
