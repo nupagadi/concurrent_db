@@ -14,16 +14,20 @@ int main()
 	h_table[string("121")] = string("121");
 
 	string str = "122";
-	h_table[std::forward<string>(str)] = str;
+	h_table[str] = str;
 
 	h_table["12"] = "12";
 	h_table["11"] = "11";
+	h_table["erase"] = "erase";
 
-	cout << (string)h_table["121"] << endl;
+	//h_table.Erase("erase");
+
+	//cout << (string)h_table["121"] << endl;
 
 
 	auto iter = h_table.Begin();
 	auto iter2 = h_table.End();
+	h_table.Erase(iter2);
 	//*iter = make_pair(string("qwe"), string("qwe"));
 	cout << (*iter).first << endl
 		<< (*iter).second << endl;
