@@ -29,15 +29,51 @@ template<class key_t, class mapped_t>
 class HashTable
 {
 public:
-	typedef std::pair<key_t, mapped_t> elem_t;
+	// const key_t
+	typedef std::pair<const key_t, mapped_t> elem_t;
+
+	template<class elem_t>		class Iterator;
+	template<class mapped_t>	class Entry;
 
 	HashTable(const size_t threads_num, const size_t table_size = HASH_TABLE_START_SIZE) : mMutex(threads_num), mMap(table_size) {}
 
-	mapped_t& operator[](const key_t& key);
-	mapped_t& operator[](key_t&& key);
+	Entry<mapped_t> operator[](const key_t& key);
+	Entry<mapped_t> operator[](key_t&& key);
+
+	template<class mapped_t>
+	class Entry
+	{
+	public:
+		Entry(mapped_t& value) : mEntry(value)
+		{}
+		Entry& operator=(const mapped_t& rh)
+		{
+			return *this;
+		}
+		Entry& operator=(mapped_t&& rh)
+		{
+			return *this;
+		}
+
+		operator mapped_t() { return mEntry; }
+
+	private:
+		mapped_t& mEntry;
+	};
 
 	//REMOVE
+private:
+	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
+	std::mutex& get_list_mx(const key_t& key) { return mMutex.GetListAlt(std::hash<key_t>()(key)); }
 
+	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
+
+	DB_MUTEX mMutex;
+
+	std::atomic<size_t> mSize;
+	std::deque<std::list<elem_t>> mMap;
+
+public:
 	// don't share iterators among several threads
 	template<class elem_t>
 	class Iterator : public std::iterator<std::bidirectional_iterator_tag, elem_t>
@@ -45,11 +81,6 @@ public:
 	public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
 		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
-
-		//Iterator(deque_iterator_t deque_begin, deque_iterator_t deque_iterator, deque_iterator_t deque_end, list_iterator_t list_iterator, list_iterator_t list_end)
-		//	: mDequeBegin(deque_begin), mDequeIterator(deque_iterator), mDequeEnd(deque_end), 
-		//	  mListIterator(list_iterator), mListEnd(list_end)
-		//{	do_increment(); }
 
 		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
 		{
@@ -183,24 +214,11 @@ public:
 		return Iterator<elem_t>(mMap, mMap.size(), mMap[mMap.size() - 1].end(), mMutex);
 	}
 
-private:
-	std::mutex& get_elem_mx(const key_t& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
-	std::mutex& get_list_mx(const key_t& key) { return mMutex.GetListAlt(std::hash<key_t>()(key)); }
-
-	std::list<elem_t>& bucket(const key_t& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
-
-	DB_MUTEX mMutex;
-
-	std::atomic<size_t> mSize;
-	std::deque<std::list<elem_t>> mMap;
 };
-
-//template<class key_t, class mapped_t>
-//DB_MUTEX HashTable<key_t, mapped_t>::MUTEX;
 
 
 template<class key_t, class mapped_t>
-mapped_t& HashTable<key_t, mapped_t>::operator[](const key_t& key)
+auto HashTable<key_t, mapped_t>::operator[](const key_t& key) -> Entry<mapped_t>
 {
 	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
 	auto& b_list = bucket(key);
@@ -216,7 +234,7 @@ mapped_t& HashTable<key_t, mapped_t>::operator[](const key_t& key)
 }
 
 template<class key_t, class mapped_t>
-mapped_t& HashTable<key_t, mapped_t>::operator[](key_t&& key)
+auto HashTable<key_t, mapped_t>::operator[](key_t&& key) -> Entry<mapped_t>
 {
 	auto lock_guard = std::lock_guard<std::mutex>(get_elem_mx(key));
 	auto& b_list = bucket(key);

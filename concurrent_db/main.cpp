@@ -19,12 +19,12 @@ int main()
 	h_table["12"] = "12";
 	h_table["11"] = "11";
 
-	cout << h_table["121"] << endl;
+	cout << (string)h_table["121"] << endl;
 
 
 	auto iter = h_table.Begin();
 	auto iter2 = h_table.End();
-	*iter = make_pair(string("qwe"), string("qwe"));
+	//*iter = make_pair(string("qwe"), string("qwe"));
 	cout << (*iter).first << endl
 		<< (*iter).second << endl;
 	cout << boolalpha;
@@ -70,17 +70,17 @@ int main()
 	htint[0] = "0";
 	htint[20] = "20";
 	htint[30] = "30";
-	cout << htint[0] << endl;
-	cout << htint[20] << endl;
-	cout << htint[30] << endl;
-	cout << htint[40] << endl;
+	cout << (string)htint[0] << endl;
+	cout << (string)htint[20] << endl;
+	cout << (string)htint[30] << endl;
+	cout << (string)htint[40] << endl;
 
 	HashTable<int, int> htint2(threads_num);
 	htint2[2] = 3;
 	htint2[2] = 2;
 	htint2[0] = 0;
-	cout << htint2[0] << endl;
-	cout << htint2[2] << endl;
-	cout << htint2[3] << endl;
-	cout << htint2[40] << endl;
+	cout << (int)htint2[0] << endl;
+	cout << (int)htint2[2] << endl;
+	cout << (int)htint2[3] << endl;
+	cout << (int)htint2[40] << endl;
 }
