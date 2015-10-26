@@ -1,4 +1,6 @@
 #include <iostream>
+#include <map>
+#include <ctime>
 
 #include "HashTable.h"
 
@@ -9,8 +11,71 @@ int main()
 
 	auto threads_num = thread::hardware_concurrency();
 
-	HashTable<string, string> h_table(threads_num);
+	deque<string> deq;
+	{
+		HashTable<string, string> m(threads_num);
 
+		for (int i = 0; i < 1048576*4; ++i)
+		{
+			m[to_string(i)] = to_string(i);
+			deq.push_back(to_string(i));
+		}
+
+		auto job = [&](size_t start){
+			volatile size_t s;
+			size_t size = 1048576 * 4/threads_num + start;
+			for (int i = start; i < size; ++i)
+			{
+				s = m.load(deq[i]).size();
+			}
+			for (int i = start; i < size; ++i)
+			{
+				m.store(deq[i], "qwerty");
+			}
+		};
+		deque<thread> threads;
+		
+		auto start = time(nullptr);
+		for (int i = 0; i < threads_num; ++i)
+		{
+			threads.emplace_back(job, 1048576 * 4 / threads_num * i);
+		}
+
+		for (auto& el : threads)
+			el.join();
+		auto end = time(nullptr);
+		cout << end - start << endl;
+	}
+
+	{
+		std::map<string, string> m;
+		for (int i = 0; i < 1048576* 4; ++i)
+			m[to_string(i)] = to_string(i);
+
+		auto start = time(nullptr);
+		//for (int i = 0; i < threads_num; ++i)
+		{
+			volatile size_t s;
+			for (int i = 0; i < 1048576 * 4; ++i)
+			{
+				s = m[deq[i]].size();
+			}
+			for (int i = 0; i < 1048576 * 4; ++i)
+			{
+				m[deq[i]] = "qwerty";
+			}
+		}
+
+		auto end = time(nullptr);
+		cout << end - start << endl;
+	}
+
+
+
+
+
+
+	/*
 	h_table[string("121")] = string("121");
 
 	string str = "122";
@@ -87,4 +152,6 @@ int main()
 	cout << (int)htint2[2] << endl;
 	cout << (int)htint2[3] << endl;
 	cout << (int)htint2[40] << endl;
+
+	*/
 }
