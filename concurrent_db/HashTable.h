@@ -1,9 +1,10 @@
 #pragma once
 
-#define HASH_TABLE_START_SIZE 1048576*64
+#define HASH_TABLE_START_SIZE 1048576*2
 //#define HASH_TABLE_START_SIZE 64
 
-#include <deque>
+//#include <deque>
+#include <vector>
 #include <string>
 #include <list>
 #include <algorithm>
@@ -27,7 +28,8 @@ template<class mutex_t>
 class DB_MUTEX
 {
 	const size_t mThreadsNum;
-	std::deque<mutex_t> mElemRW;
+
+	std::vector<mutex_t> mElemRW;
 
 public:
 	DB_MUTEX(size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum) {}
@@ -48,7 +50,7 @@ public:
 	template<class elem_t>		class Iterator;
 	template<class mapped_t>	class Entry;
 
-	HashTable(const size_t threads_num, const size_t table_size = HASH_TABLE_START_SIZE) : mMutex(threads_num), mMap(table_size) {}
+	HashTable(const size_t threads_num, const size_t table_size = HASH_TABLE_START_SIZE) : mMutex(threads_num), mArray(table_size) {}
 
 	//Entry<elem_t> operator[](const key_t& key);
 
@@ -57,33 +59,10 @@ public:
 	Entry<elem_t> operator[](key_t2&& key);
 
 	template<class key_t2>
-	mapped_t load(key_t2&& key)
-	{
-		auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
-		auto& b_list = bucket(key);
-		auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
-		if (it == b_list.end())
-		{
-			it = b_list.emplace(it, std::forward<key_t>(key), mapped_t());
-			mSize.fetch_add(1);
-		}
-		return it->second;
-	}
+	mapped_t load(key_t2&& key);
 
 	template<class key_t2, class mapped_t2>
-	void store(key_t2&& key, mapped_t2&& value)
-	{
-		auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
-
-		auto& b_list = bucket(key);
-		auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
-		if (it == b_list.end())
-		{
-			it = b_list.emplace(it, std::forward<key_t>(key), std::forward<mapped_t>(value));
-			mSize.fetch_add(1);
-		}
-		it->second = value;
-	}
+	void store(key_t2&& key, mapped_t2&& value);
 
 	// number of elements
 	size_t ElemNum() { return mSize.load(); }
@@ -91,8 +70,8 @@ public:
 	void Erase(const key_t& key);
 	// end iterator deletion does nothing
 	void Erase(const Iterator<elem_t>& it) {
-		if (it.Index() == mMap.size())		return;
-		mMap[it.Index()].erase(it.ListIterator());
+		if (it.Index() == mArray.size())		return;
+		mArray[it.Index()].erase(it.ListIterator());
 	}
 
 	template<class elem_t>
@@ -126,22 +105,24 @@ public:
 
 private:
 	template<class key_t2>
-	mutex_t& get_elem_mx(key_t2&& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
+	mutex_t& get_elem_mx(key_t2&& key) { return mMutex.GetElemRW(mHash(key)); }
 	void lock(const key_t& key) { mMutex.lock(std::hash<key_t>()(key)); }
 	void unlock(const key_t& key) { mMutex.unlock(std::hash<key_t>()(key)); }
 
 	template<class key_t2>
-	std::list<elem_t>& bucket(const key_t2& key) { return mMap[std::hash<key_t>()(key) % mMap.size()]; }
+	std::list<elem_t>& bucket(const key_t2& key) { return mArray[mHash(key) % mArray.size()]; }
 	std::pair<std::list<elem_t>, bool> find(const key_t& key){
 		auto& b_list = bucket(key);
 		auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 		return std::make_pair(it, it != b_list.end());
 	}
 
+	std::hash<key_t> mHash;
+
 	DB_MUTEX<mutex_t> mMutex;
 
 	std::atomic<size_t> mSize;
-	std::deque<std::list<elem_t>> mMap;
+	std::vector<std::list<elem_t>> mArray;
 
 public:
 	// don't share iterators among several threads
@@ -150,12 +131,11 @@ public:
 	{
 	public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
-		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
 
-		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX<mutex_t>& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
+		Iterator(std::vector<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX<mutex_t>& mx) : mArray(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
 		{
 			mMutex.GetElemRW(mIndex).lock();
-			bool is_empty = mIndex != mMap.size() && mMap[mIndex].empty();
+			bool is_empty = mIndex != mArray.size() && mArray[mIndex].empty();
 			mMutex.GetElemRW(mIndex).unlock();
 			if (is_empty)	do_increment();
 		}
@@ -183,7 +163,7 @@ public:
 		}
 
 		bool operator==(const Iterator& rh) {
-			if (mIndex == this->mMap.size())
+			if (mIndex == this->mArray.size())
 				return mIndex == rh.mIndex;
 			return mIndex == rh.mIndex && mListIterator == rh.mListIterator;				
 		}
@@ -197,82 +177,12 @@ public:
 
 
 	private:
-		void do_increment()
-		{
-
-			// CONSIDER GUARDS!!!!!!!!!!
-			// in case of incrementing end or decrementing begin
-
-			if (mIndex == mMap.size()) return;
-
-			mMutex.GetElemRW(mIndex).lock();
-			auto list_end = mMap[mIndex].end();
-
-			if (mListIterator != list_end)
-				++mListIterator;
-
-			if (mListIterator == list_end)
-			{
-				do	{
-					// order matters due to deadlock possibility
-					mMutex.GetElemRW(mIndex).unlock();
-
-					if (++mIndex == mMap.size())	return;
-
-					mMutex.GetElemRW(mIndex).lock();
-				}	while (mMap[mIndex].empty());
-				
-				mListIterator = mMap[mIndex].begin();
-
-			}
-			// unlock last index mutex, mb original one
-			mMutex.GetElemRW(mIndex).unlock();
-		}
-
-		void do_decrement()
-		{
-
-			// CONSIDER GUARDS!!!!!!!!!!
-
-			mMutex.GetElemRW(mIndex).lock();
-
-			if (mIndex == mMap.size())
-				seek_prev();
-
-			//if (mIndex != mMap.size())
-			else
-			{
-				auto list_begin = mMap[mIndex].begin();
-				// assume mListIterator is valid
-				if (mListIterator != list_begin)
-					--mListIterator;
-				else if (!mIndex) return;
-				else	seek_prev();
-			}
-			// unlock last index mutex, mb original one
-			mMutex.GetElemRW(mIndex).unlock();
-		}
-
-		// seek for the very previous valid iterator
-		// unlocks input, locks output
-		void seek_prev()
-		{
-			
-			do {
-				// order matters due to deadlock possibility
-				mMutex.GetElemRW(mIndex).unlock();
-				mMutex.GetElemRW(--mIndex).lock();
-			} while (mIndex > 0 && mMap[mIndex].empty());
-
-			if (mIndex >= 0 && !mMap[mIndex].empty())
-			{
-				mListIterator = mMap[mIndex].end();
-				--mListIterator;
-			}
-		}
+		void do_increment();
+		void do_decrement();
+		void seek_prev();
 
 		size_t mIndex = 0;
-		std::deque<std::list<elem_t>>& mMap;
+		std::vector<std::list<elem_t>>& mArray;
 
 		list_iterator_t mListIterator;
 
@@ -280,13 +190,44 @@ public:
 	};
 
 	Iterator<elem_t> Begin()	{
-		return Iterator<elem_t>(mMap, 0, mMap[0].begin(), mMutex);
+		return Iterator<elem_t>(mArray, 0, mArray[0].begin(), mMutex);
 	}
 	Iterator<elem_t> End()	{
-		return Iterator<elem_t>(mMap, mMap.size(), mMap[mMap.size() - 1].end(), mMutex);
+		return Iterator<elem_t>(mArray, mArray.size(), mArray[mArray.size() - 1].end(), mMutex);
 	}
 
 };
+
+template<class key_t, class mapped_t, class mutex_t>
+template<class key_t2>
+mapped_t HashTable<key_t, mapped_t, mutex_t>::load(key_t2&& key)
+{
+	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
+	auto& b_list = bucket(key);
+	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
+	if (it == b_list.end())
+	{
+		it = b_list.emplace(it, std::forward<key_t>(key), mapped_t());
+		mSize.fetch_add(1);
+	}
+	return it->second;
+}
+
+template<class key_t, class mapped_t, class mutex_t>
+template<class key_t2, class mapped_t2>
+void HashTable<key_t, mapped_t, mutex_t>::store(key_t2&& key, mapped_t2&& value)
+{
+	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
+
+	auto& b_list = bucket(key);
+	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
+	if (it == b_list.end())
+	{
+		it = b_list.emplace(it, std::forward<key_t>(key), std::forward<mapped_t>(value));
+		mSize.fetch_add(1);
+	}
+	it->second = value;
+}
 
 template<class key_t, class mapped_t, class mutex_t>
 template<class key_t2>
@@ -313,5 +254,85 @@ void HashTable<key_t, mapped_t, mutex_t>::Erase(const key_t& key)
 	{
 		b_list.erase(it);
 		mSize.fetch_add(-1);
+	}
+}
+
+template<class key_t, class mapped_t, class mutex_t>
+template<class elem_t>
+void HashTable<key_t, mapped_t, mutex_t>::Iterator<elem_t>::do_increment()
+{
+
+	// CONSIDER GUARDS!!!!!!!!!!
+	// in case of incrementing end or decrementing begin
+
+	if (mIndex == mArray.size()) return;
+
+	mMutex.GetElemRW(mIndex).lock();
+	auto list_end = mArray[mIndex].end();
+
+	if (mListIterator != list_end)
+		++mListIterator;
+
+	if (mListIterator == list_end)
+	{
+		do	{
+			// order matters due to deadlock possibility
+			mMutex.GetElemRW(mIndex).unlock();
+
+			if (++mIndex == mArray.size())	return;
+
+			mMutex.GetElemRW(mIndex).lock();
+		} while (mArray[mIndex].empty());
+
+		mListIterator = mArray[mIndex].begin();
+
+	}
+	// unlock last index mutex, mb original one
+	mMutex.GetElemRW(mIndex).unlock();
+}
+
+template<class key_t, class mapped_t, class mutex_t>
+template<class elem_t>
+void HashTable<key_t, mapped_t, mutex_t>::Iterator<elem_t>::do_decrement()
+{
+
+	// CONSIDER GUARDS!!!!!!!!!!
+
+	mMutex.GetElemRW(mIndex).lock();
+
+	if (mIndex == mArray.size())
+		seek_prev();
+
+	//if (mIndex != mArray.size())
+	else
+	{
+		auto list_begin = mArray[mIndex].begin();
+		// assume mListIterator is valid
+		if (mListIterator != list_begin)
+			--mListIterator;
+		else if (!mIndex) return;
+		else	seek_prev();
+	}
+	// unlock last index mutex, mb original one
+	mMutex.GetElemRW(mIndex).unlock();
+}
+
+// seek for the very previous valid iterator
+// unlocks input, locks output
+template<class key_t, class mapped_t, class mutex_t>
+template<class elem_t>
+void HashTable<key_t, mapped_t, mutex_t>::Iterator<elem_t>::seek_prev()
+{
+
+	do {
+		// order matters due to deadlock possibility
+		mMutex.GetElemRW(mIndex).unlock();
+		mMutex.GetElemRW(--mIndex).lock();
+	} while (mIndex > 0 && mArray[mIndex].empty());
+
+	if (mIndex >= 0 && !mArray[mIndex].empty())
+	{
+		mListIterator = mArray[mIndex].end();
+		--mListIterator;
 	}
 }

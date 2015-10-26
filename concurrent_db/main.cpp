@@ -1,6 +1,7 @@
 #include <iostream>
 #include <map>
 #include <ctime>
+#include <xtree>
 
 #include "HashTable.h"
 
@@ -11,7 +12,7 @@ int main()
 
 	auto threads_num = thread::hardware_concurrency();
 
-	deque<int> deq;
+	vector<int> deq;
 	{
 		HashTable<int, int, CRITICAL_SECTION_CLASS> m(threads_num);
 
@@ -20,32 +21,32 @@ int main()
 			m[(i)] = (i);
 			deq.push_back((i));
 		}
+		auto start = time(nullptr);
 
-		auto job = [&](size_t start){
+		//auto job = [&](size_t start){
 			volatile size_t s;
-			size_t size = HASH_TABLE_START_SIZE / threads_num + start;
-			for (int i = 0; i < 2; ++i)
+			//size_t size = HASH_TABLE_START_SIZE / threads_num + start;
+			for (int i = 0; i < 8; ++i)
 			{
-				for (int i = start; i < size; ++i)
+				for (int i = 0; i < HASH_TABLE_START_SIZE; i += 1)
 				{
 					s = m.load(i);
 				}
-				for (int i = start; i < size; ++i)
+				for (int i = 0; i < HASH_TABLE_START_SIZE; i += 1)
 				{
 					m.store(i, 123);
 				}
 			}
-		};
-		deque<thread> threads;
-		
-		auto start = time(nullptr);
-		for (int i = 0; i < threads_num; ++i)
-		{
-			threads.emplace_back(job, HASH_TABLE_START_SIZE / threads_num * i);
-		}
+		//};
+		//deque<thread> threads;
+		//
+		//for (int i = 0; i < threads_num; ++i)
+		//{
+		//	threads.emplace_back(job, i);
+		//}
 
-		for (auto& el : threads)
-			el.join();
+		//for (auto& el : threads)
+		//	el.join();
 		auto end = time(nullptr);
 		cout << end - start << endl;
 	}
@@ -57,7 +58,7 @@ int main()
 
 		auto start = time(nullptr);
 		volatile size_t s;
-		for (int i = 0; i < 2; ++i)
+		for (int i = 0; i < 8; ++i)
 		{
 			for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 			{
