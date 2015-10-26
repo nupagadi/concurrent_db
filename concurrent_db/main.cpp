@@ -11,26 +11,29 @@ int main()
 
 	auto threads_num = thread::hardware_concurrency();
 
-	deque<string> deq;
+	deque<int> deq;
 	{
-		HashTable<string, string> m(threads_num);
+		HashTable<int, int, CRITICAL_SECTION_CLASS> m(threads_num);
 
-		for (int i = 0; i < 1048576*4; ++i)
+		for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 		{
-			m[to_string(i)] = to_string(i);
-			deq.push_back(to_string(i));
+			m[(i)] = (i);
+			deq.push_back((i));
 		}
 
 		auto job = [&](size_t start){
 			volatile size_t s;
-			size_t size = 1048576 * 4/threads_num + start;
-			for (int i = start; i < size; ++i)
+			size_t size = HASH_TABLE_START_SIZE / threads_num + start;
+			for (int i = 0; i < 2; ++i)
 			{
-				s = m.load(deq[i]).size();
-			}
-			for (int i = start; i < size; ++i)
-			{
-				m.store(deq[i], "qwerty");
+				for (int i = start; i < size; ++i)
+				{
+					s = m.load(i);
+				}
+				for (int i = start; i < size; ++i)
+				{
+					m.store(i, 123);
+				}
 			}
 		};
 		deque<thread> threads;
@@ -38,7 +41,7 @@ int main()
 		auto start = time(nullptr);
 		for (int i = 0; i < threads_num; ++i)
 		{
-			threads.emplace_back(job, 1048576 * 4 / threads_num * i);
+			threads.emplace_back(job, HASH_TABLE_START_SIZE / threads_num * i);
 		}
 
 		for (auto& el : threads)
@@ -48,21 +51,21 @@ int main()
 	}
 
 	{
-		std::map<string, string> m;
-		for (int i = 0; i < 1048576* 4; ++i)
-			m[to_string(i)] = to_string(i);
+		std::map<int, int> m;
+		for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
+			m[(i)] = (i);
 
 		auto start = time(nullptr);
-		//for (int i = 0; i < threads_num; ++i)
+		volatile size_t s;
+		for (int i = 0; i < 2; ++i)
 		{
-			volatile size_t s;
-			for (int i = 0; i < 1048576 * 4; ++i)
+			for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 			{
-				s = m[deq[i]].size();
+				s = m[i];
 			}
-			for (int i = 0; i < 1048576 * 4; ++i)
+			for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 			{
-				m[deq[i]] = "qwerty";
+				m[i] = 123;
 			}
 		}
 
@@ -71,11 +74,10 @@ int main()
 	}
 
 
+/*
 
+	HashTable<string, string, std::mutex> h_table(threads_num);
 
-
-
-	/*
 	h_table[string("121")] = string("121");
 
 	string str = "122";
@@ -85,7 +87,7 @@ int main()
 	h_table["11"] = "11";
 	h_table["erase"] = "erase";
 
-	//h_table.Erase("erase");
+	h_table.Erase("erase");
 
 	//cout << (string)h_table["121"] << endl;
 
@@ -135,7 +137,7 @@ int main()
 
 
 
-	HashTable<int, string> htint(threads_num);
+	HashTable<int, string, std::mutex> htint(threads_num);
 	htint[0] = "0";
 	htint[20] = "20";
 	htint[30] = "30";
@@ -144,7 +146,7 @@ int main()
 	cout << (string)htint[30] << endl;
 	cout << (string)htint[40] << endl;
 
-	HashTable<int, int> htint2(threads_num);
+	HashTable<int, int, std::mutex> htint2(threads_num);
 	htint2[2] = 3;
 	htint2[2] = 2;
 	htint2[0] = 0;
@@ -153,5 +155,6 @@ int main()
 	cout << (int)htint2[3] << endl;
 	cout << (int)htint2[40] << endl;
 
-	*/
+		
+*/
 }

@@ -1,7 +1,7 @@
 #pragma once
 
-#define HASH_TABLE_START_SIZE 1048576*8
-//#define HASH_TABLE_START_SIZE 10000000
+#define HASH_TABLE_START_SIZE 1048576*64
+//#define HASH_TABLE_START_SIZE 64
 
 #include <deque>
 #include <string>
@@ -13,42 +13,32 @@
 
 #include <windows.h>
 
-class MUTEX
+class CRITICAL_SECTION_CLASS
 {
 	CRITICAL_SECTION mCS;
 public:
-	MUTEX() { InitializeCriticalSection(&mCS); }
-	~MUTEX(){ DeleteCriticalSection(&mCS); }
+	CRITICAL_SECTION_CLASS() { InitializeCriticalSection(&mCS); }
+	~CRITICAL_SECTION_CLASS(){ DeleteCriticalSection(&mCS); }
 	void lock(){ EnterCriticalSection(&mCS); }
 	void unlock(){ LeaveCriticalSection(&mCS); }
 };
 
+template<class mutex_t>
 class DB_MUTEX
 {
 	const size_t mThreadsNum;
-	std::deque<MUTEX> mElemRW;
+	std::deque<mutex_t> mElemRW;
 
 public:
 	DB_MUTEX(size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum) {}
 
-	MUTEX& GetElemRW(size_t hash){ return mElemRW[hash%mThreadsNum]; }
+	mutex_t& GetElemRW(size_t hash){ return mElemRW[hash%mThreadsNum]; }
 
 	void lock(size_t hash){ mElemRW[hash%mThreadsNum].lock(); }
 	void unlock(size_t hash){ mElemRW[hash%mThreadsNum].unlock(); }
 };
 
-//class DB_MUTEX
-//{
-//	const size_t mThreadsNum;
-//	std::deque<std::mutex> mElemRW;
-//
-//public:
-//	DB_MUTEX(const size_t threads_num) : mThreadsNum(threads_num), mElemRW(mThreadsNum) {}
-//
-//	std::mutex& GetElemRW(size_t hash){ return mElemRW[hash%mThreadsNum]; }
-//};
-
-template<class key_t, class mapped_t>
+template<class key_t, class mapped_t, class mutex_t>
 class HashTable
 {
 public:
@@ -69,7 +59,7 @@ public:
 	template<class key_t2>
 	mapped_t load(key_t2&& key)
 	{
-		auto lock_guard = std::lock_guard<MUTEX>(get_elem_mx(key));
+		auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 		auto& b_list = bucket(key);
 		auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 		if (it == b_list.end())
@@ -83,7 +73,7 @@ public:
 	template<class key_t2, class mapped_t2>
 	void store(key_t2&& key, mapped_t2&& value)
 	{
-		auto lock_guard = std::lock_guard<MUTEX>(get_elem_mx(key));
+		auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 
 		auto& b_list = bucket(key);
 		auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
@@ -109,34 +99,34 @@ public:
 	class Entry
 	{
 	public:
-		Entry(elem_t& entry, DB_MUTEX& mutex) : mEntry(entry), mMutex(mutex)
+		Entry(elem_t& entry, DB_MUTEX<mutex_t>& mutex) : mEntry(entry), mMutex(mutex)
 		{}
 		Entry& operator=(const mapped_t& rh)
 		{
-			auto lock_guard = std::lock_guard<MUTEX>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			auto lock_guard = std::lock_guard<mutex_t>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
 			mEntry.second = rh;
 			return *this;
 		}
 		Entry& operator=(mapped_t&& rh)
 		{
-			auto lock_guard = std::lock_guard<MUTEX>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			auto lock_guard = std::lock_guard<mutex_t>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
 			mEntry.second = std::move(rh);
 			return *this;
 		}
 
 		operator mapped_t() { 
-			auto lock_guard = std::lock_guard<std::mutex>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
+			auto lock_guard = std::lock_guard<mutex_t>(mMutex.GetElemRW(std::hash<key_t>()(mEntry.first)));
 			return mEntry.second; 
 		}
 
 	private:
 		elem_t& mEntry;
-		DB_MUTEX& mMutex;
+		DB_MUTEX<mutex_t>& mMutex;
 	};
 
 private:
 	template<class key_t2>
-	MUTEX& get_elem_mx(key_t2&& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
+	mutex_t& get_elem_mx(key_t2&& key) { return mMutex.GetElemRW(std::hash<key_t>()(key)); }
 	void lock(const key_t& key) { mMutex.lock(std::hash<key_t>()(key)); }
 	void unlock(const key_t& key) { mMutex.unlock(std::hash<key_t>()(key)); }
 
@@ -148,7 +138,7 @@ private:
 		return std::make_pair(it, it != b_list.end());
 	}
 
-	DB_MUTEX mMutex;
+	DB_MUTEX<mutex_t> mMutex;
 
 	std::atomic<size_t> mSize;
 	std::deque<std::list<elem_t>> mMap;
@@ -162,7 +152,7 @@ public:
 		typedef typename std::list<elem_t>::iterator list_iterator_t;
 		typedef typename std::deque<std::list<elem_t>>::iterator deque_iterator_t;
 
-		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
+		Iterator(std::deque<std::list<elem_t>>& map, size_t index, list_iterator_t list_iterator, DB_MUTEX<mutex_t>& mx) : mMap(map), mIndex(index), mListIterator(list_iterator), mMutex(mx)
 		{
 			mMutex.GetElemRW(mIndex).lock();
 			bool is_empty = mIndex != mMap.size() && mMap[mIndex].empty();
@@ -211,9 +201,9 @@ public:
 		{
 
 			// CONSIDER GUARDS!!!!!!!!!!
-			// CONSIDER GUARDS!!!!!!!!!!
-			// CONSIDER GUARDS!!!!!!!!!!
 			// in case of incrementing end or decrementing begin
+
+			if (mIndex == mMap.size()) return;
 
 			mMutex.GetElemRW(mIndex).lock();
 			auto list_end = mMap[mIndex].end();
@@ -243,8 +233,6 @@ public:
 		{
 
 			// CONSIDER GUARDS!!!!!!!!!!
-			// CONSIDER GUARDS!!!!!!!!!!
-			// CONSIDER GUARDS!!!!!!!!!!
 
 			mMutex.GetElemRW(mIndex).lock();
 
@@ -258,6 +246,7 @@ public:
 				// assume mListIterator is valid
 				if (mListIterator != list_begin)
 					--mListIterator;
+				else if (!mIndex) return;
 				else	seek_prev();
 			}
 			// unlock last index mutex, mb original one
@@ -287,7 +276,7 @@ public:
 
 		list_iterator_t mListIterator;
 
-		DB_MUTEX& mMutex;
+		DB_MUTEX<mutex_t>& mMutex;
 	};
 
 	Iterator<elem_t> Begin()	{
@@ -299,11 +288,11 @@ public:
 
 };
 
-template<class key_t, class mapped_t>
+template<class key_t, class mapped_t, class mutex_t>
 template<class key_t2>
-auto HashTable<key_t, mapped_t>::operator[](key_t2&& key) -> Entry<elem_t>
+auto HashTable<key_t, mapped_t, mutex_t>::operator[](key_t2&& key) -> Entry<elem_t>
 {
-	auto lock_guard = std::lock_guard<MUTEX>(get_elem_mx(key));
+	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 	auto& b_list = bucket(key);
 	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 	if (it == b_list.end())
@@ -314,10 +303,10 @@ auto HashTable<key_t, mapped_t>::operator[](key_t2&& key) -> Entry<elem_t>
 	return Entry<elem_t>(*it, mMutex);
 }
 
-template<class key_t, class mapped_t>
-void HashTable<key_t, mapped_t>::Erase(const key_t& key)
+template<class key_t, class mapped_t, class mutex_t>
+void HashTable<key_t, mapped_t, mutex_t>::Erase(const key_t& key)
 {
-	auto lock_guard = std::lock_guard<MUTEX>(get_elem_mx(key));
+	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 	auto& b_list = bucket(key);
 	auto it = std::find_if(b_list.begin(), b_list.end(), [&key](const elem_t& el){ return el.first == key; });
 	if (it != b_list.end())
