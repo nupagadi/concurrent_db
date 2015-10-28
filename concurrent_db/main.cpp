@@ -21,6 +21,9 @@ int main()
 			m[(i)] = (i);
 			deq.push_back((i));
 		}
+
+		cout << "started...";
+
 		auto start = time(nullptr);
 
 		auto job = [&](size_t start){
@@ -48,7 +51,7 @@ int main()
 		for (auto& el : threads)
 			el.join();
 		auto end = time(nullptr);
-		cout << end - start << endl;
+		cout << "\b\b\b\b\b\b\b\b\b\b\b\b" <<end - start << "                "<< endl;
 	}
 
 	{
