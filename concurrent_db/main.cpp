@@ -21,34 +21,37 @@ int main()
 			m[(i)] = (i);
 			deq.push_back((i));
 		}
+
+		cout << "started...";
+
 		auto start = time(nullptr);
 
-		//auto job = [&](size_t start){
+		auto job = [&](size_t start){
 			volatile size_t s;
 			//size_t size = HASH_TABLE_START_SIZE / threads_num + start;
 			for (int i = 0; i < 8; ++i)
 			{
-				for (int i = 0; i < HASH_TABLE_START_SIZE; i += 1)
+				for (int i = start; i < HASH_TABLE_START_SIZE; i += threads_num)
 				{
 					s = m.load(i);
 				}
-				for (int i = 0; i < HASH_TABLE_START_SIZE; i += 1)
+				for (int i = start; i < HASH_TABLE_START_SIZE; i += threads_num)
 				{
 					m.store(i, 123);
 				}
 			}
-		//};
-		//deque<thread> threads;
-		//
-		//for (int i = 0; i < threads_num; ++i)
-		//{
-		//	threads.emplace_back(job, i);
-		//}
+		};
+		vector<thread> threads;
+		
+		for (int i = 0; i < threads_num; ++i)
+		{
+			threads.emplace_back(job, i);
+		}
 
-		//for (auto& el : threads)
-		//	el.join();
+		for (auto& el : threads)
+			el.join();
 		auto end = time(nullptr);
-		cout << end - start << endl;
+		cout << "\b\b\b\b\b\b\b\b\b\b\b\b" <<end - start << "                "<< endl;
 	}
 
 	{
