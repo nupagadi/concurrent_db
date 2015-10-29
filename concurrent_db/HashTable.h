@@ -1,6 +1,6 @@
 #pragma once
 
-#define HASH_TABLE_START_SIZE 1048576*2
+#define HASH_TABLE_START_SIZE 1048576*128
 //#define HASH_TABLE_START_SIZE 64
 
 //#include <deque>
@@ -73,7 +73,7 @@ public:
 	ListEntry<key_t, mapped_t>* EmplaceBack(key_t2&& key, mapped_t2&& value)	
 	{
 		auto being_created = new ListEntry<key_t, mapped_t>(key, value);
-		if (!mBack)  return mBack = being_created;
+		if (!mBack)  return mFront = mBack = being_created;
 		mBack->mNext = being_created;
 		mBack->mNext->mPrev = mBack;
 		return  mBack = mBack->mNext;
@@ -83,7 +83,7 @@ public:
 	ListEntry<key_t, mapped_t>* Find(key_t2&& key) //const 
 	{
 		ListEntry<key_t, mapped_t>* ptr = mFront;
-		for (; ptr && ptr->mKey == key; ptr = ptr->mNext);
+		for (; ptr && ptr->mKey != key; ptr = ptr->mNext);
 		return ptr;
 	}
 
@@ -168,7 +168,7 @@ private:
 	void unlock(const key_t& key) { mMutex.unlock(std::hash<key_t>()(key)); }
 
 	template<class key_t2>
-	List<key_t, mapped_t> bucket(key_t2&& key) { return mArray[mHash(key) % mArray.size()]; }
+	List<key_t, mapped_t>& bucket(key_t2&& key) { return mArray[mHash(key) % mArray.size()]; }
 
 	std::hash<key_t> mHash;
 
@@ -258,7 +258,7 @@ mapped_t HashTable<key_t, mapped_t, mutex_t>::load(key_t2&& key)
 {
 	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 
-	List<key_t, mapped_t> key_list = bucket(key);
+	List<key_t, mapped_t>& key_list = bucket(key);
 	ListEntry<key_t, mapped_t>* l_entry = key_list.Find(key);
 	if (!l_entry)	{
 		l_entry = key_list.EmplaceBack(std::forward<key_t>(key), mapped_t());
@@ -274,12 +274,13 @@ void HashTable<key_t, mapped_t, mutex_t>::store(key_t2&& key, mapped_t2&& value)
 {
 	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 
-	List<key_t, mapped_t> key_list = bucket(key);
+	List<key_t, mapped_t>& key_list = bucket(key);
 	ListEntry<key_t, mapped_t>* l_entry = key_list.Find(key);
 	if (!l_entry)	{
 		l_entry = key_list.EmplaceBack(std::forward<key_t>(key), std::forward<mapped_t>(value));
 		mSize.fetch_add(1);
 	}
+	else  l_entry->Value() = value;
 }
 
 template<class key_t, class mapped_t, class mutex_t>
@@ -288,7 +289,7 @@ auto HashTable<key_t, mapped_t, mutex_t>::operator[](key_t2&& key) -> Entry<elem
 {
 	auto lock_guard = std::lock_guard<mutex_t>(get_elem_mx(key));
 
-	List<key_t, mapped_t> key_list = bucket(key);
+	List<key_t, mapped_t>& key_list = bucket(key);
 	ListEntry<key_t, mapped_t>* l_entry = key_list.Find(key);
 	if (!l_entry)	{
 		l_entry = key_list.EmplaceBack(std::forward<key_t>(key), mapped_t());

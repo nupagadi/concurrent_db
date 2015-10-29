@@ -14,7 +14,7 @@ int main()
 
 	vector<int> deq;
 	{
-		HashTable<int, int, CRITICAL_SECTION_CLASS> m(threads_num);
+		HashTable<int, int, CRITICAL_SECTION_CLASS> m(threads_num*2);
 
 		for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 		{
@@ -29,7 +29,7 @@ int main()
 		auto job = [&](size_t start){
 			volatile size_t s;
 			//size_t size = HASH_TABLE_START_SIZE / threads_num + start;
-			for (int i = 0; i < 8; ++i)
+			for (int i = 0; i < 1; ++i)
 			{
 				for (int i = start; i < HASH_TABLE_START_SIZE; i += threads_num)
 				{
@@ -59,9 +59,10 @@ int main()
 		for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 			m[(i)] = (i);
 
+		cout << "started...";
 		auto start = time(nullptr);
 		volatile size_t s;
-		for (int i = 0; i < 8; ++i)
+		for (int i = 0; i < 1; ++i)
 		{
 			for (int i = 0; i < HASH_TABLE_START_SIZE; ++i)
 			{
@@ -74,7 +75,7 @@ int main()
 		}
 
 		auto end = time(nullptr);
-		cout << end - start << endl;
+		cout << "\b\b\b\b\b\b\b\b\b\b\b\b" <<end - start << "                "<< endl;
 	}
 
 
